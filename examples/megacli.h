@@ -421,3 +421,5 @@ void exec_syncxable(autocomplete::ACState& s);
 
 void exec_setsandelements(autocomplete::ACState& s);
 void exec_reqstat(autocomplete::ACState& s);
+
+void exec_folderstat(autocomplete::ACState& s); 
