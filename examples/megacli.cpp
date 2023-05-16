@@ -11304,7 +11304,7 @@ void exec_folderstat(autocomplete::ACState &s)
                     << pair.first                    
                     << " = "
                     << pair.second
-                    << "bytes"
+                    << " bytes"
                     << endl;
     
     }    
