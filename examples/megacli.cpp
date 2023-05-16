@@ -23,6 +23,7 @@
 #include "megacli.h"
 #include <fstream>
 #include <bitset>
+#include <map>
 #include "mega/testhooks.h"
 
 #if defined(_WIN32) && defined(_DEBUG)
@@ -11183,24 +11184,44 @@ void exec_manualverif(autocomplete::ACState &s)
     }
 }
 
-void getTotalFileStat(Node *node, size_t& fileCount, size_t& totalSize) {
+string getPathExt(string path) 
+{
+    string::size_type pos;
+    pos = path.rfind('.');
+
+    if(pos != string::npos) 
+    {
+        string ext = path.substr(pos + 1);
+        return ext;
+    }
     
-    //size_t files = client->mNodeManager.getNumberOfChildrenByType(node->nodeHandle(), FILENODE);
+    return "(file)";
+}
+
+void getTotalFileStat(Node *node, size_t& fileCount, size_t& totalSize, map<string, size_t>& fileTypeSize) 
+{
+   
     node_vector nodes = client->mNodeManager.getChildrenFromType(node, FILENODE, CancelToken());
 
-    for (node_vector::iterator it = nodes.begin(); it != nodes.end(); ++it) {
-        conlock(cout) << "\tCalculating for " << node->displaypath() << "/" << (*it)->displayname() << endl; 
+    for (node_vector::iterator it = nodes.begin(); it != nodes.end(); ++it) 
+    {
+        string ext = getPathExt(node->displaypath() + (*it)->displayname());
+        fileTypeSize[ext] += (*it)->size;
+
+        conlock(cout) << "\tCalculating for " << node->displaypath() << "/" << (*it)->displayname() << "(" << ext << ")" << endl; 
 
         fileCount ++;
         totalSize += (*it)->size;
     }
 }
 
-void navigateFolders(Node *node, size_t& totalFolders, size_t& fileCount, size_t& totalSize) {
+void navigateFolders(Node *node, size_t& totalFolders, size_t& fileCount, size_t& totalSize, map<string, size_t>& fileTypeSize) 
+{
 
     constexpr size_t MAX_FOLDERS = 128; //set a reasonable limit to prevent stack overflow. (ideally should be in config)
     
-    if (totalFolders > MAX_FOLDERS) {
+    if (totalFolders > MAX_FOLDERS) 
+    {
         conlock(cout) << ": MAX_FOLDERS for stat is " << MAX_FOLDERS << endl;
         return;
     }
@@ -11211,9 +11232,10 @@ void navigateFolders(Node *node, size_t& totalFolders, size_t& fileCount, size_t
       
     node_vector nodes = client->mNodeManager.getChildrenFromType(node, FOLDERNODE, CancelToken());
 
-    getTotalFileStat(node, fileCount, totalSize);
+    getTotalFileStat(node, fileCount, totalSize, fileTypeSize);
 
-    for (node_vector::iterator it = nodes.begin(); it != nodes.end(); ++it) {
+    for (node_vector::iterator it = nodes.begin(); it != nodes.end(); ++it) 
+    {
         string displayPath = (*it)->displaypath();
 
         conlock(cout) << "\tNavigating to " << displayPath << endl; 
@@ -11222,12 +11244,13 @@ void navigateFolders(Node *node, size_t& totalFolders, size_t& fileCount, size_t
             conlock(cout) << "\t" << displayPath << ": Is not a folder" << endl;
         }
         else {            
-            navigateFolders(subNode, totalFolders, fileCount, totalSize);
+            navigateFolders(subNode, totalFolders, fileCount, totalSize, fileTypeSize);
         }
     }
 }
 
-void exec_folderstat(autocomplete::ACState &s) {
+void exec_folderstat(autocomplete::ACState &s) 
+{
     string folder;
     Node* node = nullptr;
     
@@ -11249,7 +11272,8 @@ void exec_folderstat(autocomplete::ACState &s) {
         }
     }
 
-    if (node == nullptr) {
+    if (node == nullptr) 
+    {
         conlock(cout) << folder << ": Unable to connect" << endl;
         return;
     }
@@ -11257,7 +11281,9 @@ void exec_folderstat(autocomplete::ACState &s) {
     conlock(cout) << folder << ": Attempting to fetch information" << endl;
     
     size_t totalFiles = 0, totalFileSize = 0, totalFolders = 0;    
-    navigateFolders(node, totalFolders, totalFiles, totalFileSize);
+    map<string, size_t> fileTypes;
+
+    navigateFolders(node, totalFolders, totalFiles, totalFileSize, fileTypes);
     
     conlock(cout)   << folder << endl 
                     << "Total Folders "
@@ -11269,4 +11295,17 @@ void exec_folderstat(autocomplete::ACState &s) {
                     << "Total File Size "
                     << totalFileSize << " bytes"
                     << endl << endl;
+
+    conlock(cout)  << "Size by Type : " << endl;
+
+    for (const auto &pair : fileTypes ) {
+        string ext = pair.first;        
+        conlock(cout)  
+                    << pair.first                    
+                    << " = "
+                    << pair.second
+                    << "bytes"
+                    << endl;
+    
+    }    
 }
