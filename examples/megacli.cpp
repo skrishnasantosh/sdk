@@ -4401,6 +4401,7 @@ autocomplete::ACN autocompleteSyntax()
                         )));
 
     p->Add(exec_reqstat, sequence(text("reqstat"), opt(either(flag("-on"), flag("-off")))));
+    p->Add(exec_folderstat, sequence(text("folderstat"), opt(param("folder"))));
 
     return autocompleteTemplate = std::move(p);
 }
@@ -11180,4 +11181,92 @@ void exec_manualverif(autocomplete::ACState &s)
     {
         client->mKeyManager.setManualVerificationFlag(false);
     }
+}
+
+void getTotalFileStat(Node *node, size_t& fileCount, size_t& totalSize) {
+    
+    //size_t files = client->mNodeManager.getNumberOfChildrenByType(node->nodeHandle(), FILENODE);
+    node_vector nodes = client->mNodeManager.getChildrenFromType(node, FILENODE, CancelToken());
+
+    for (node_vector::iterator it = nodes.begin(); it != nodes.end(); ++it) {
+        conlock(cout) << "\tCalculating for " << node->displaypath() << "/" << (*it)->displayname() << endl; 
+
+        fileCount ++;
+        totalSize += (*it)->size;
+    }
+}
+
+void navigateFolders(Node *node, size_t& totalFolders, size_t& fileCount, size_t& totalSize) {
+
+    constexpr size_t MAX_FOLDERS = 128; //set a reasonable limit to prevent stack overflow. (ideally should be in config)
+    
+    if (totalFolders > MAX_FOLDERS) {
+        conlock(cout) << ": MAX_FOLDERS for stat is " << MAX_FOLDERS << endl;
+        return;
+    }
+
+    conlock(cout) << "\tIn Folder " << node->displaypath() << endl;
+
+    totalFolders++;
+      
+    node_vector nodes = client->mNodeManager.getChildrenFromType(node, FOLDERNODE, CancelToken());
+
+    getTotalFileStat(node, fileCount, totalSize);
+
+    for (node_vector::iterator it = nodes.begin(); it != nodes.end(); ++it) {
+        string displayPath = (*it)->displaypath();
+
+        conlock(cout) << "\tNavigating to " << displayPath << endl; 
+        Node *subNode = nodebypath(displayPath.c_str());
+        if (subNode == nullptr) {
+            conlock(cout) << "\t" << displayPath << ": Is not a folder" << endl;
+        }
+        else {            
+            navigateFolders(subNode, totalFolders, fileCount, totalSize);
+        }
+    }
+}
+
+void exec_folderstat(autocomplete::ACState &s) {
+    string folder;
+    Node* node = nullptr;
+    
+    if (s.words.size() > 1)
+    {
+        folder = s.words[1].s;
+        if (!(node = nodebypath(folder.c_str())))
+        {
+            conlock(cout) << folder << ": No such file or directory" << endl;
+            return;
+        }
+    }
+    else
+    {
+        client->fetchnodes();
+        node_vector nodes = client->mNodeManager.getRootNodes();
+        if (nodes.size() > 1) {
+            node = nodes[0];
+        }
+    }
+
+    if (node == nullptr) {
+        conlock(cout) << folder << ": Unable to connect" << endl;
+        return;
+    }
+    
+    conlock(cout) << folder << ": Attempting to fetch information" << endl;
+    
+    size_t totalFiles = 0, totalFileSize = 0, totalFolders = 0;    
+    navigateFolders(node, totalFolders, totalFiles, totalFileSize);
+    
+    conlock(cout)   << folder << endl 
+                    << "Total Folders "
+                    << totalFolders
+                    << ". "
+                    << "Total Files "
+                    << totalFiles
+                    << ". "
+                    << "Total File Size "
+                    << totalFileSize << " bytes"
+                    << endl << endl;
 }
